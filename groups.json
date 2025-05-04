@@ -1,0 +1,12 @@
+{
+    "groups": [
+        {
+            "name": "dad",
+            "password": "123"
+        },
+        {
+            "name": "a",
+            "password": "432"
+        }
+    ]
+}
