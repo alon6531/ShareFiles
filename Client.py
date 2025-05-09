@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
 from  Engine import *
+from ftplib import FTP
 
 
 class Client:
@@ -128,7 +129,7 @@ class Client:
 
     def send_file(self, file_path, group_name):
         """
-        Send a file to the server.
+        Send a file to the server using FTP.
         """
         if not os.path.isfile(file_path):
             print(f"File not found: {file_path}")
@@ -140,37 +141,24 @@ class Client:
         try:
             print(f"Sending file: {filename} ({filesize} bytes)")
 
-            # Create the metadata JSON
-            metadata = {
-                "action": "receiveFile",
-                "filename": filename,
-                "filesize": filesize,
-                "group_name": group_name  # Include group name in metadata
-            }
+            # Connect to the FTP server
+            ftp = FTP(self.server_host)
+            ftp.login()  # Assuming anonymous login or modify for user authentication
 
-            # Encrypt the metadata
-            metadata_json = json.dumps(metadata)
-            encrypted_metadata =metadata_json.encode()
+            # Change to the target directory (optional, based on your setup)
+            # ftp.cwd('/target/directory')
 
-            # Send the length of the encrypted metadata JSON
-            self.client_socket.sendall(len(encrypted_metadata).to_bytes(4, 'big'))
-
-            # Send the encrypted metadata
-            self.client_socket.sendall(encrypted_metadata)
-
-            # Now send the file content in chunks
+            # Open the file and upload it using FTP
             with open(file_path, "rb") as file:
-                while True:
-                    chunk = file.read(4096)  # Read in 4 KB chunks
-                    if not chunk:
-                        break  # End of file
-                    self.client_socket.sendall(chunk)
+                ftp.storbinary(f"STOR {filename}", file)
 
-            print("File sent successfully!")
+            print(f"File {filename} sent successfully!")
+
+            # Close FTP connection
+            ftp.quit()
 
         except Exception as e:
-            print(f"Error sending file: {e}")
-            self.client_socket.close()
+            print(f"Error sending file via FTP: {e}")
 
     def log_out(self):
         receive_num_data = {
@@ -265,45 +253,39 @@ class Client:
             return []
 
     def receive_all_files(self, group_name):
+        """
+        Receive all files for a specific group from the FTP server.
+        """
         try:
-            print(f"Sending request to server to receive files for group: {group_name}")
-            request_data = {"action": "sendAllFiles", "group_name": group_name}
-            self.client_socket.send(self.encrypt(json.dumps(request_data)))
+            print(f"Requesting files for group: {group_name}")
 
-            print("Request sent. Waiting for number of files...")
-            num_files_data = self.recv_all(1)
-            num_files = int(num_files_data.decode())
+            # Connect to the FTP server
+            ftp = FTP(self.server_host)
+            ftp.login()  # Assuming anonymous login or modify for user authentication
 
-            print(f"Received number of files: {num_files}")
-            if num_files == 0:
+            # List files in the target directory (optional, modify based on your setup)
+            files = ftp.nlst()  # List file names in the FTP server's current directory
+            print(f"Found {len(files)} files on server.")
+
+            if len(files) == 0:
                 print("No files found.")
+                ftp.quit()
                 return
 
-            for _ in range(num_files):
-                metadata_len = int.from_bytes(self.recv_all(4), 'big')
-                metadata_json = self.recv_all(metadata_len)
-                metadata = json.loads(metadata_json.decode('utf-8'))
+            for filename in files:
+                print(f"Receiving file: {filename}")
 
-                filename = metadata["filename"]
-                filesize = metadata["filesize"]
-                print(f"Receiving file: {filename}, size: {filesize} bytes")
+                # Open the local file for writing
+                with open(filename, "wb") as file:
+                    ftp.retrbinary(f"RETR {filename}", file.write)
 
-                # More receiving logic here...
+                print(f"File {filename} received successfully!")
+
+            # Close FTP connection
+            ftp.quit()
 
         except Exception as e:
-            print(f"Error in receive_all_files: {e}")
-
-    def recv_all(self, num_bytes):
-        """
-        Receive the specified number of bytes from the socket.
-        """
-        data = b''  # Start with an empty byte string
-        while len(data) < num_bytes:
-            packet = self.client_socket.recv(num_bytes - len(data)).decode()  # Receive the remaining bytes
-            if not packet:
-                raise Exception("Connection lost.")
-            data += packet
-        return data
+            print(f"Error receiving files via FTP: {e}")
 
     def remove_file(self, group_name, file_path):
         """

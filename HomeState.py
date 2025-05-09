@@ -2,8 +2,11 @@ import socket
 import json
 import tkinter as tk
 from tkinter import PhotoImage
+import threading
+import time
 from GroupState import GroupState
 from State import State
+
 
 class HomeState(State):
     def __init__(self, engine):
@@ -36,20 +39,39 @@ class HomeState(State):
         # Store the group buttons for easy tracking later if needed
         self.group_buttons = []
 
-        # Load existing groups from the client
-        self.load_groups_from_server()
+        # Start a background thread to refresh groups every 5 seconds
+        self.start_group_refresh_thread()
+
+    def start_group_refresh_thread(self):
+        """Start a thread to refresh the groups every 5 seconds."""
+        refresh_thread = threading.Thread(target=self.refresh_groups_periodically)
+        refresh_thread.daemon = True  # Daemon thread will automatically close when the main program exits
+        refresh_thread.start()
+
+    def refresh_groups_periodically(self):
+        """Periodically refresh groups from the server every 5 seconds."""
+        while True:
+            self.load_groups_from_server()
+            time.sleep(5)  # Wait for 5 seconds before refreshing again
 
     def load_groups_from_server(self):
         """Load groups from the server and create buttons for them."""
         groups = self.engine.client.receive_groups()
 
+        # Create a set of existing group names to avoid duplicates
+        existing_groups = {button.cget("text") for button in self.group_buttons}
+
         for group in groups:
-            print(f"Received group: {group}")  # הדפסת הקבוצה לצורך בדיקה
+            print(f"Received group: {group}")  # Debug print to check the group format
             if isinstance(group, dict) and "name" in group:
                 group_name = group["name"]
-                self.add_group_button(group_name)
+                if group_name not in existing_groups:
+                    self.add_group_button(group_name)
+                    existing_groups.add(group_name)  # Add group to the set of existing groups
+                else:
+                    print(f"Group '{group_name}' already exists.")  # Debug message for existing group
             else:
-                print(f"Invalid group format: {group}")  # אם המידע לא נכון
+                print(f"Invalid group format: {group}")  # If the format is invalid
 
     def open_add_group_popup(self):
         self.popup = tk.Toplevel(self.engine.root)
